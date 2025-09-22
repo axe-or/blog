@@ -1,3 +1,4 @@
+import mistletoe as md
 import sqlite3 as sql
 import os.path as path
 import urllib.parse
@@ -12,15 +13,15 @@ def parse_datetime(s: str) -> datetime:
 
 @dataclass
 class Article:
-	id : int
 	name : str
 	title : str
 	author : str
 	contents : str
 
-	created_at : datetime
-	updated_at : datetime
-	deleted_at : datetime | None
+	id : int = 0
+	created_at : datetime = None
+	updated_at : datetime = None
+	deleted_at : datetime | None = None
 
 SCHEMA_QUERY = '''
 	CREATE TABLE IF NOT EXISTS Article(
@@ -121,7 +122,7 @@ class Repository:
 				INSERT INTO
 					Article(name, title, author, contents)
 				VALUES
-					(?, ?, ?, ?, ?, ?)
+					(?, ?, ?, ?)
 			''', (article.name, article.title, article.author, article.contents))
 
 	def update_article(self, article: Article):
@@ -180,6 +181,7 @@ Usage: {argv[0]} <command>
 Commands:
     publish <file>   Publish a .md <file>
     delete <name>    Remove article with <name>
+    generate <dir>   Generate a static site rooted at <dir>
     list             List all created articles
     purge            Purge all articles marked as deleted
 '''.strip()
@@ -197,9 +199,22 @@ def main():
 			if len(name) == 0 or not is_url_path_safe(name):
 				print(f'Error: file name {filepath} is not URL path safe')
 				exit(1)
-			
+
+			filedata = ''
+			with open(filepath, 'r') as f:
+				filedata = f.read()
+
+			article = Article(name=name, author='meeee', contents=filedata, title = 'something')
+			repo.create_article(article)
+
+		elif cmd == 'generate':
+			article = repo.get_article('skibidi')
+			print(md.markdown(article.contents))
 		elif cmd == 'delete':
 			pass
+		else:
+			print(HELP_MSG)
+			exit(1)
 	except IndexError:
 		print(HELP_MSG)
 		exit(1)
