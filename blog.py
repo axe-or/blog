@@ -39,12 +39,12 @@ SCHEMA_QUERY = '''
 '''
 
 class Repository:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         self.connection = sql.connect(db_path)
         self.connection.execute('PRAGMA foreign_keys = ON')
         self.connection.execute('PRAGMA journal_mode = WAL')
 
-    def init_schema(self):
+    def init_schema(self) -> None:
         cur = self.connection.cursor()
         cur.execute(SCHEMA_QUERY)
 
@@ -83,7 +83,7 @@ class Repository:
             return Article(id=id, name=name, title=title, author=author, contents=contents,
                 created_at=created_at, updated_at=updated_at, deleted_at=deleted_at)
 
-    def list_articles(self, include_deleted = False) -> list[Article]:
+    def list_articles(self, include_deleted: bool = False) -> list[Article]:
         articles = []
 
         with self.connection:
@@ -115,7 +115,7 @@ class Repository:
 
         return articles
 
-    def create_article(self, article: Article):
+    def create_article(self, article: Article) -> None:
         cur = None
 
         with self.connection:
@@ -126,7 +126,7 @@ class Repository:
                     (?, ?, ?, ?)
             ''', (article.name, article.title, article.author, article.contents))
 
-    def update_article(self, article: Article):
+    def update_article(self, article: Article) -> None:
         with self.connection:
             self.connection.execute('''
                 UPDATE
@@ -141,7 +141,7 @@ class Repository:
                 id = ?
             ''', (article.name, article.title, article.author, article.contents, article.id))
 
-    def restore_article(self, key: int | str):
+    def restore_article(self, key: int | str) -> bool:
         with self.connection:
             query = '''
                 UPDATE
@@ -159,7 +159,12 @@ class Repository:
             else:
                 raise TypeError("Invalid key type")
 
-    def delete_article(self, key: int | str):
+            query += ' AND deleted_at IS NOT NULL'
+
+            cur = self.connection.execute(query, (key,))
+            return cur.rowcount > 0
+
+    def delete_article(self, key: int | str) -> bool:
         with self.connection:
             query = '''
                 UPDATE
@@ -176,9 +181,12 @@ class Repository:
             else:
                 raise TypeError("Invalid key type")
 
-            self.connection.execute(query, (key,))
+            query += ' AND deleted_at IS NULL'
 
-    def purge_deleted_entries(self):
+            cur = self.connection.execute(query, (key,))
+            return cur.rowcount > 0
+
+    def purge_deleted_entries(self) -> None:
         with self.connection:
             self.connection.execute('''
                 DELETE FROM
@@ -197,13 +205,14 @@ Usage: {argv[0]} <command>
 Commands:
     publish <file>   Publish a .md <file>
     delete <name>    Remove article with <name>
+    restore <name>   Restore a deleted article with <name>
     generate <dir>   Generate a static site rooted at <dir>
     list             List all created articles
+    list-deleted     List all deleted articles
     purge            Purge all articles marked as deleted
 '''.strip()
 
-
-def main():
+def main() -> None:
     repo = Repository('app.db')
     repo.init_schema()
 
@@ -220,22 +229,50 @@ def main():
             filedata = ''
             with open(filepath, 'r') as f:
                 filedata = f.read()
+            
+            article = repo.get_article(name)
+            author = 'meeee'
+            title = 'something'
 
-            article = Article(name=name, author='meeee', contents=filedata, title = 'something')
-            repo.create_article(article)
-
+            if article is None:
+                article = Article(name=name, author=author, contents=filedata, title=title)
+                repo.create_article(article)
+                print(f'Created article {name} by {author}')
+            else:
+                print(f'Article named {name} already exists. Updating it')
+                article.author = 'meee'
+                article.contents = filedata
+                article.title = 'something'
+                repo.update_article(article)
+                print(f'Updated article {name} by {author}')
+        elif cmd == 'restore':
+            name = argv[2]
+            if repo.restore_article(name):
+                print(f'Restored {name}')
+            else:
+                print(f'No article named {name} could be restored')
+                exit(1)
+        elif cmd == 'delete':
+            name = argv[2]
+            if repo.delete_article(name):
+                print(f'Deleted {name}, you can still restore it with `restore`')
+            else:
+                print(f'No article named {name} could be deleted')
+                exit(1)
         elif cmd == 'generate':
             article = repo.get_article('skibidi')
             assert article is not None
             print(md.markdown(article.contents))
-
-        elif cmd == 'delete':
-            pass
-
         elif cmd == 'list':
             articles = repo.list_articles()
             selection = map(lambda a: [a.name, a.author, a.title, a.created_at, a.updated_at], articles)
-            output = tabulate(selection, headers=['Id', 'Name', 'Author', 'Published', 'Updated'])
+            output = tabulate(selection, headers=['Name', 'Author', 'Title', 'Published', 'Updated'])
+            print(output)
+        elif cmd == 'list-deleted':
+            articles = repo.list_articles(include_deleted=True)
+            selection = filter(lambda a: a.deleted_at is not None, articles)
+            selection = map(lambda a: [a.name, a.author, a.title, a.deleted_at], selection)
+            output = tabulate(selection, headers=['Name', 'Author', 'Title', 'Deleted'])
             print(output)
         else:
             print(HELP_MSG)
