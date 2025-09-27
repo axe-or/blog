@@ -1,0 +1,30 @@
+:root {
+	--background-main: beige;
+	--foreground-main: black;
+	--foreground-anchor: magenta;
+	--foreground-anchor-hot: red;
+
+	--text-size-default: 14pt;
+}
+
+body {
+	background: var(--background-main);
+	color: var(--foreground-main);
+	font-size: var(--text-size-default);
+}
+
+main {
+	display: block;
+	width: clamp(200px, 95%, 800px);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+a, a:visited {
+	color: var(--foreground-anchor);
+	text-decoration: none;
+}
+
+a:hover {
+	color: var(--foreground-anchor-hot);
+}
