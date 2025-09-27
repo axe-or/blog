@@ -1,12 +1,16 @@
 import mistletoe as mt
+import os.path as path
 from mistletoe.block_token import Heading
 from mistletoe.span_token import RawText
 from mistletoe.token import Token
-
-import os.path as path
+from flask import Flask, render_template, make_response, abort
 from dataclasses import dataclass
 from os import listdir
-from flask import Flask, render_template, make_response
+from datetime import datetime
+
+app = Flask(__name__)
+
+ARTICLE_ROOT = 'articles'
 
 @dataclass
 class Article:
@@ -14,50 +18,70 @@ class Article:
     display_name : str
     title : str
     contents : str
+    updated_at : datetime
 
-app = Flask(__name__)
+    def __init__(self, name: str, source: str, updated_at: datetime | None = None):
+        if updated_at is None:
+            updated_at = datetime.now()
 
-ARTICLE_ROOT = 'articles'
+        with mt.HtmlRenderer() as renderer:
+            document = mt.Document(source)
+            title = name
+            display_name = name
 
-def create_article(name: str, source: str):
-    with mt.HtmlRenderer() as renderer:
-        document = mt.Document(source)
-        print(document.children)
+            heading = pop_first_heading(document)
 
-def load_articles(root: str):
-    filepaths = map(lambda p: path.join(root, p), filter(lambda p: p.endswith('.md'), listdir(root)))
-    articles = []
+            if heading is not None:
+                title = renderer.render(heading)
+                display_name = ' '.join(extract_raw_text(heading))
 
-    for filepath in filepaths:
-        filedata = ''
-        with open(filepath, 'r') as f:
-            filedata = f.read()
+            self.name = name
+            self.display_name = display_name
+            self.title = title
+            self.contents = renderer.render(document)
+            self.updated_at = updated_at
 
-        name, _ = path.splitext(path.basename(filepath))
-        article = Article(
-            name = name,
-            title = f'TODO:{path.basename(filepath)}',
-            contents = mt.markdown(filedata)
-        )
+class ArticleCache:
+    _articles : dict = {}
 
-        create_article(name, filedata)
+    @classmethod
+    def reload_articles(cls, root: str):
+        cls._articles = {}
+        filepaths = map(lambda p: path.join(root, p), filter(lambda p: p.endswith('.md'), listdir(root)))
 
-        articles.append(article)
+        for filepath in filepaths:
+            filedata = ''
+            with open(filepath, 'r') as f:
+                filedata = f.read()
 
-    return articles
+            name, _ = path.splitext(path.basename(filepath))
+            article = Article(name, filedata)
+            print(article)
+
+            cls._articles[name] = article
+
+    @classmethod
+    def get(cls, name: str):
+        try:
+            a = cls._articles[name]
+            return a
+        except KeyError:
+            return None
 
 @app.route("/article/<name>")
 def get_article(name: str):
-    articles = load_articles(ARTICLE_ROOT)
-    for article in articles:
-        if article.name == name:
-            return render_template('article.html', article=article)
-    return 'No :/'
+    article = ArticleCache.get(name)
+    if article is not None:
+        last_update = article.updated_at.strftime("%Y-%m-%d")
+        return render_template('article.html', article=article, last_update=last_update)
+    else:
+        abort(404)
 
 @app.route("/")
 def index():
-    articles = load_articles(ARTICLE_ROOT)
-    return render_template('index.html', page_title='blog', article_list=articles)
+    article_list = list(ArticleCache._articles.values())
+    article_list.sort(key=lambda a: a.updated_at)
+    return render_template('index.html', page_title='blog', article_list=article_list)
 
 def find_first_heading(root: Token) -> Heading | None:
     if type(root) is Heading:
@@ -95,35 +119,8 @@ def extract_raw_text(node: Token):
     _extract_raw_text_rec(node, buf)
     return buf
 
-
-def create_article(name: str, source: str):
-    with mt.HtmlRenderer() as renderer:
-        document = mt.Document(source)
-        title = name
-        display_name = name
-
-        heading = pop_first_heading(document)
-
-        if heading is not None:
-            title = renderer.render(heading)
-            display_name = ' '.join(extract_raw_text(heading))
-
-        article = Article(
-            name = name,
-            display_name = display_name,
-            title = title,
-            contents = renderer.render(document),
-        )
-
-        return article
-
 def main():
-    data = ''
-    with open('articles/bar.md', 'r') as f:
-        data = f.read()
-
-    article = create_article('bar', data)
-    print(article)
-    # app.run(port=8080, debug=True)
+    ArticleCache.reload_articles(ARTICLE_ROOT)
+    app.run(port=8080, debug=True)
 
 if __name__ == "__main__": main()

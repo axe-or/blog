@@ -1,9 +1,13 @@
 :root {
-	--background-main: beige;
-	--foreground-main: black;
-	--foreground-anchor: magenta;
-	--foreground-anchor-hot: red;
+	--background-main: #181818;
+	--background-dimmed: #222222;
 
+	--foreground-main: #fff0da;
+	--foreground-anchor: #ffbf20;
+
+	--text-size-title: 26pt;
+	--text-size-h1: 22pt;
+	--text-size-h2: 18pt;
 	--text-size-default: 14pt;
 }
 
@@ -11,6 +15,11 @@ body {
 	background: var(--background-main);
 	color: var(--foreground-main);
 	font-size: var(--text-size-default);
+}
+
+hr {
+	color: var(--background-dimmed);
+	border-color: var(--background-dimmed);
 }
 
 main {
@@ -26,5 +35,29 @@ a, a:visited {
 }
 
 a:hover {
-	color: var(--foreground-anchor-hot);
+	background-color: var(--foreground-anchor);
+	color: var(--background-main);
+}
+
+h1, h2, h3, h4, h5 {
+	font-weight: normal;
+	text-transform: none;
+}
+
+h1 {
+	font-size: var(--text-size-h1);
+}
+
+h2 {
+	font-size: var(--text-size-h2);
+}
+
+.article-header h1 {
+	font-weight: normal;
+	text-transform: none;
+	font-size: var(--text-size-title);
+}
+
+.article-update-date {
+	color: var(--foreground-main);
 }
