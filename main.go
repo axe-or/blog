@@ -6,14 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 	"os"
+	"io"
 	"io/fs"
 	"log"
+	"net/http"
 	"html/template"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
 	"github.com/gomarkdown/markdown/html"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const ARTICLE_ROOT = "articles"
@@ -141,7 +145,7 @@ func initTemplates(){
 	}
 }
 
-func RenderArticle(article Article) string {
+func RenderArticle(w io.Writer, article Article) {
 	type templateData struct {
 		DisplayName string
 		Title template.HTML
@@ -156,14 +160,10 @@ func RenderArticle(article Article) string {
 		LastUpdated: article.UpdatedAt.Format("2006-01-02"),
 	}
 
-	sb := strings.Builder{}
-	err := articleTempl.Execute(&sb, data)
+	err := articleTempl.Execute(w, data)
 	if err != nil {
-		log.Print("Failed to execute template: ", err.Error())
-		return ""
+		log.Fatal("Failed to execute template: ", err.Error())
 	}
-
-	return sb.String()
 }
 
 func LoadArticleFromFile(path string) (article Article, err error) {
@@ -186,31 +186,65 @@ func LoadArticleFromFile(path string) (article Article, err error) {
 	return
 }
 
+func RenderIndexPage(w io.Writer, title string, articles []Article){
+	type templateData struct {
+		ArticleList []Article
+		PageTitle string
+	}
+
+	data := templateData{
+		ArticleList: articles,
+		PageTitle: title,
+	}
+
+	err := indexTempl.Execute(w, data)
+	if err != nil {
+		log.Fatal("Failed to execute template: ", err.Error())
+	}
+}
+
 func main(){
+	log.Println("Initializing templates")
 	initTemplates()
-	// article := NewArticle("foo", "# Hello *world*!\nparagraph", time.Now())
 
-	articleCache := make(map[string]Article)
-
+	log.Println("Loading articles")
 	mdFiles, _ := ListDirectoryMarkdownFiles("articles")
+	articleCache := make(map[string]Article, len(mdFiles))
+	articleList := make([]Article, 0, len(mdFiles))
+
 	for _, file := range mdFiles {
 		article, loadError := LoadArticleFromFile(file)
 		if loadError != nil {
 			log.Println("Failed to load article", file, ":", loadError.Error())
+			continue
 		}
 		articleCache[article.Name] = article
+		articleList = append(articleList, article)
+		log.Println("Loaded ", file)
 	}
 
+	log.Println("Router setup")
+	router := chi.NewRouter()
+	router.Use(middleware.Compress(5))
+	fileServer := http.FileServer(http.Dir("./static"))
 
-	for _, article := range articleCache {
-		fmt.Println("-------", article.Name,"------")
-		fmt.Println(RenderArticle(article))
-	}
+	router.Get("/", func(w http.ResponseWriter, r *http.Request){
+		RenderIndexPage(w, "The Blog", articleList)
+	})
 
-	// fmt.Println("Name:", article.Name)
-	// fmt.Println("Title:", article.Title)
-	// fmt.Println("Display Name:", article.DisplayName)
-	// fmt.Println("Content:", article.Content)
+	router.Handle("/static/*", http.StripPrefix("/static/", fileServer))
 
-	// fmt.Println(RenderArticle(article))
+	router.Get("/article/{name}", func(w http.ResponseWriter, r *http.Request){
+		name := chi.URLParam(r, "name")
+
+		if article, ok := articleCache[name]; ok {
+			RenderArticle(w, article)
+		} else {
+			http.Error(w, http.StatusText(404), 404)
+		}
+	})
+
+	listenAddress := ":8080"
+	log.Println("Listening on ", listenAddress)
+	http.ListenAndServe(listenAddress, router)
 }
