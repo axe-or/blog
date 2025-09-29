@@ -52,7 +52,6 @@ class ArticleCache:
         self.root = root
 
     def reload_articles(self):
-        print('Reload')
         self.last_reload = datetime.now()
         self.articles = {}
         filepaths = map(lambda p: path.join(self.root, p), filter(lambda p: p.endswith('.md'), os.listdir(self.root)))
@@ -68,11 +67,11 @@ class ArticleCache:
             self.articles[name] = article
 
     def get(self, name: str):
-        now = datetime.now()
-        elapsed = (now - self.last_reload).total_seconds()
+        # now = datetime.now()
+        # elapsed = (now - self.last_reload).total_seconds()
 
-        if elapsed > self.lifespan:
-            self.reload_articles()
+        # if elapsed > self.lifespan:
+        #     self.reload_articles()
 
         try:
             a = self.articles[name]
