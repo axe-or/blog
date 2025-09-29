@@ -4,18 +4,16 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="/static/style.css" />
-	<title>{{ page_title }}</title>
+	<title>{{ .PageTitle }}</title>
 </head>
 
 <body>
 	<main>
 	<ul class="article-list">
-		{% for article in article_list %}
-			<li> <a href="/article/{{ article.name }}"> {{ article.name }} </a>  </li>
-		{% endfor %}
-
+		{{ range .ArticleList }}
+			<li> <a href="/article/{{ .Name }}"> {{ .DisplayName }} </a></li>
+		{{ end }}
 	</ul>
-		
 	</main>
 </body>
 

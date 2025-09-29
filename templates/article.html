@@ -4,18 +4,18 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="/static/style.css" />
-	<title>{{ article.display_name }}</title>
+	<title>{{ .DisplayName }}</title>
 </head>
 <body>
 	<main>
 		<div class="article-header">
-			<span class="article-title"> {{ article.title | safe }} </span>
-			<span class="article-update-date"> Last Updated: {{ last_update }} </span>
+			<span class="article-title"> {{ .Title }} </span>
+			<span class="article-update-date"> Last Updated: {{ .LastUpdated }} </span>
 			<hr />
 		</div>
 
 		<article>
-			{{ article.contents | safe }}
+			{{ .Content }}
 		</article>
 	</main>
 </body>

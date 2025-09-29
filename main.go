@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"time"
+	"path/filepath"
 	"strings"
 	"os"
+	"io/fs"
+	"log"
+	"html/template"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
@@ -17,8 +21,8 @@ const ARTICLE_ROOT = "articles"
 type Article struct {
     Name string
     DisplayName string
-    Title string
-    Content string
+    Title template.HTML
+    Content template.HTML
     UpdatedAt time.Time
 }
 
@@ -45,7 +49,7 @@ func PopFirstHeading(doc *ast.Document) (heading *ast.Heading) {
 func NewArticle(name string, source string, updatedAt time.Time) Article {
 	article := Article{
 		Name: name,
-		Title: fmt.Sprintf("<h1>%s</h1>", name),
+		Title: template.HTML(fmt.Sprintf("<h1>%s</h1>", string(name))),
 		DisplayName: name,
 		UpdatedAt: updatedAt,
 	}
@@ -60,10 +64,10 @@ func NewArticle(name string, source string, updatedAt time.Time) Article {
 	heading := PopFirstHeading(root)
 	if heading != nil {
 		article.DisplayName = ExtractRawText(heading)
-		article.Title = string(markdown.Render(heading, renderer))
+		article.Title = template.HTML(markdown.Render(heading, renderer))
 	}
 
-	article.Content = string(markdown.Render(root, renderer))
+	article.Content = template.HTML(markdown.Render(root, renderer))
 
 	return article
 }
@@ -113,18 +117,100 @@ func ListDirectoryMarkdownFiles(dir string) ([]string, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasSuffix(name, ".md") && entry.Type().IsRegular(){
-			result = append(result, name)
+			result = append(result, filepath.Join(dir, name))
 		}
 	}
 	return result, nil
 }
 
-func main(){
-	article := NewArticle("foo", "# Hello *world*!\nparagraph", time.Now())
-	fmt.Println(ListDirectoryMarkdownFiles("articles"))
 
-	fmt.Println("Name:", article.Name)
-	fmt.Println("Title:", article.Title)
-	fmt.Println("Display Name:", article.DisplayName)
-	fmt.Println("Content:", article.Content)
+var articleTempl *template.Template
+var indexTempl *template.Template
+
+func initTemplates(){
+	var err error
+
+	articleTempl, err = template.ParseFiles("templates/article.html")
+	if err != nil {
+		log.Fatal("Failed to initialize templates: ", err.Error())
+	}
+
+	indexTempl, err = template.ParseFiles("templates/index.html")
+	if err != nil {
+		log.Fatal("Failed to initialize templates: ", err.Error())
+	}
+}
+
+func RenderArticle(article Article) string {
+	type templateData struct {
+		DisplayName string
+		Title template.HTML
+		LastUpdated string
+		Content template.HTML
+	}
+
+	data := templateData{
+		DisplayName: article.DisplayName,
+		Title: article.Title,
+		Content: article.Content,
+		LastUpdated: article.UpdatedAt.Format("2006-01-02"),
+	}
+
+	sb := strings.Builder{}
+	err := articleTempl.Execute(&sb, data)
+	if err != nil {
+		log.Print("Failed to execute template: ", err.Error())
+		return ""
+	}
+
+	return sb.String()
+}
+
+func LoadArticleFromFile(path string) (article Article, err error) {
+	var (
+		data []byte
+		info fs.FileInfo
+	)
+
+	data, err = os.ReadFile(path)
+	if err != nil { return }
+
+	info, err = os.Stat(path)
+	if err != nil { return }
+
+	basename := filepath.Base(path)
+	ext := filepath.Ext(basename)
+	name := basename[:len(basename) - len(ext)]
+
+	article = NewArticle(name, string(data), info.ModTime())
+	return
+}
+
+func main(){
+	initTemplates()
+	// article := NewArticle("foo", "# Hello *world*!\nparagraph", time.Now())
+
+	articleCache := make(map[string]Article)
+
+	mdFiles, _ := ListDirectoryMarkdownFiles("articles")
+	for _, file := range mdFiles {
+		article, loadError := LoadArticleFromFile(file)
+		if loadError != nil {
+			log.Println("Failed to load article", file, ":", loadError.Error())
+		}
+		articleCache[article.Name] = article
+	}
+
+
+	for _, article := range articleCache {
+		fmt.Println("-------", article.Name,"------")
+		fmt.Println(RenderArticle(article))
+	}
+
+	// fmt.Println("Name:", article.Name)
+	// fmt.Println("Title:", article.Title)
+	// fmt.Println("Display Name:", article.DisplayName)
+	// fmt.Println("Content:", article.Content)
+
+	// fmt.Println(RenderArticle(article))
 }
