@@ -1,19 +1,23 @@
 :root {
-	--background-main: #181818;
+	--background-main: #1d2021;
 	--background-dimmed: #222222;
 
-	--foreground-main: #fff0df;
-	--foreground-anchor: #ffbf20;
+	--foreground-main: #fbf1c7;
+	--foreground-dimmed: #d5c4a1;
 
+	--foreground-anchor: #ffbf20;
 	--text-size-title: 26pt;
 	--text-size-h1: 22pt;
 	--text-size-h2: 18pt;
+	--text-size-h3: 16pt;
 	--text-size-default: 14pt;
 }
 
 body {
 	background: var(--background-main);
 	color: var(--foreground-main);
+	font-size: var(--text-size-default);
+	font-family: serif;
 	font-size: var(--text-size-default);
 }
 
@@ -52,7 +56,20 @@ h2 {
 	font-size: var(--text-size-h2);
 }
 
-.article-header h1 {
+h2 {
+	font-size: var(--text-size-h3);
+}
+
+.text-dimmed {
+	color: var(--foreground-dimmed);
+}
+
+.article-list li {
+	list-style-type: none;
+	padding: 0.2rem;
+}
+
+.big-title h1 {
 	font-weight: normal;
 	text-transform: none;
 	font-size: var(--text-size-title);

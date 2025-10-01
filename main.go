@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"html/template"
+	"sync"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
@@ -145,15 +146,17 @@ func initTemplates(){
 	}
 }
 
-func RenderArticle(w io.Writer, article Article) {
-	type templateData struct {
-		DisplayName string
-		Title template.HTML
-		LastUpdated string
-		Content template.HTML
-	}
+type articleTemplateData struct {
+	DisplayName string
+	Name string
+	Title template.HTML
+	LastUpdated string
+	Content template.HTML
+}
 
-	data := templateData{
+
+func RenderArticle(w io.Writer, article Article) {
+	data := articleTemplateData{
 		DisplayName: article.DisplayName,
 		Title: article.Title,
 		Content: article.Content,
@@ -186,14 +189,32 @@ func LoadArticleFromFile(path string) (article Article, err error) {
 	return
 }
 
+func Apply[U, T any](f func(T) U, s []T) []U {
+	res := make([]U, len(s))
+	for i, v := range s {
+		res[i] = f(v)
+	}
+	return res
+}
+
 func RenderIndexPage(w io.Writer, title string, articles []Article){
 	type templateData struct {
-		ArticleList []Article
+		ArticleList []articleTemplateData
 		PageTitle string
 	}
 
+	articleData := Apply(func(a Article) articleTemplateData {
+		return articleTemplateData {
+			DisplayName: a.DisplayName,
+			Title: a.Title,
+			Name: a.Name,
+			Content: a.Content,
+			LastUpdated: a.UpdatedAt.Format("2006-01-02"),
+		}
+	}, articles)
+
 	data := templateData{
-		ArticleList: articles,
+		ArticleList: articleData,
 		PageTitle: title,
 	}
 
@@ -203,11 +224,38 @@ func RenderIndexPage(w io.Writer, title string, articles []Article){
 	}
 }
 
-func main(){
-	log.Println("Initializing templates")
-	initTemplates()
 
-	log.Println("Loading articles")
+type Repository struct {
+	articles    map[string]Article
+	articleList []Article
+	lastRefresh time.Time
+	mutex       sync.RWMutex
+}
+
+func NewRepository() *Repository {
+	repo := Repository {
+		articles: make(map[string]Article),
+		articleList: make([]Article, 0, 8),
+	}
+	return &repo
+}
+
+func (repo *Repository) GetArticle(name string) (Article, bool) {
+	repo.mutex.RLock()
+	defer repo.mutex.RUnlock()
+
+	a, ok := repo.articles[name]
+	return a, ok
+}
+
+func (repo *Repository) GetArticleList() []Article {
+	repo.mutex.RLock()
+	defer repo.mutex.RUnlock()
+
+	return repo.articleList
+}
+
+func (repo *Repository) Refresh() {
 	mdFiles, _ := ListDirectoryMarkdownFiles("articles")
 	articleCache := make(map[string]Article, len(mdFiles))
 	articleList := make([]Article, 0, len(mdFiles))
@@ -220,16 +268,43 @@ func main(){
 		}
 		articleCache[article.Name] = article
 		articleList = append(articleList, article)
-		log.Println("Loaded ", file)
 	}
+
+	repo.mutex.Lock()
+	defer repo.mutex.Unlock()
+
+	repo.articles = articleCache
+	repo.articleList = articleList
+	repo.lastRefresh = time.Now()
+}
+
+func main(){
+	log.Println("Initializing templates")
+	initTemplates()
+
+	log.Println("Loading articles")
 
 	log.Println("Router setup")
 	router := chi.NewRouter()
 	router.Use(middleware.Compress(5))
 	fileServer := http.FileServer(http.Dir("./static"))
 
+	repo := NewRepository()
+	go func(){
+		const articleRefreshLifetime = time.Second * 1;
+
+		for {
+			if (time.Since(repo.lastRefresh)) >= articleRefreshLifetime {
+				initTemplates()
+				repo.Refresh()
+				// log.Println("Refreshed repo, last refresh was: ", repo.lastRefresh.Format("2006-01-02 15:04:05"))
+			}
+			time.Sleep(time.Millisecond * 500)
+		}
+	}()
+
 	router.Get("/", func(w http.ResponseWriter, r *http.Request){
-		RenderIndexPage(w, "The Blog", articleList)
+		RenderIndexPage(w, "The Blog", repo.GetArticleList())
 	})
 
 	router.Handle("/static/*", http.StripPrefix("/static/", fileServer))
@@ -237,7 +312,7 @@ func main(){
 	router.Get("/article/{name}", func(w http.ResponseWriter, r *http.Request){
 		name := chi.URLParam(r, "name")
 
-		if article, ok := articleCache[name]; ok {
+		if article, ok := repo.GetArticle(name); ok {
 			RenderArticle(w, article)
 		} else {
 			http.Error(w, http.StatusText(404), 404)

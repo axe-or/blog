@@ -10,12 +10,21 @@
 
 <body>
 	<main>
-	<ul class="article-list">
-		{{ range .ArticleList }}
-			<li> <a href="/article/{{ .Name }}"> {{ .DisplayName }} </a></li>
-		{{ end }}
-	</ul>
+		<div class="blog-prelude">
+			<h1 class="big-title">{{ .PageTitle }}</h1>
+		</div>
+
+		The description
+		<h1>Articles</h1>
+
+		<ul class="article-list">
+			{{ range .ArticleList }}
+			<li>
+				<span style="padding-right: 12pt">{{ .LastUpdated }}</span>
+				<a href="/article/{{ .Name }}"> {{ .DisplayName }}</a>
+			</li>
+			{{ end }}
+		</ul>
 	</main>
 </body>
-
 </html>
