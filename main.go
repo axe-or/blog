@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"os"
+	"os/signal"
 	"io"
 	"io/fs"
 	"log"
@@ -68,8 +69,12 @@ func NewArticle(name string, source string, updatedAt time.Time) Article {
 
 	heading := PopFirstHeading(root)
 	if heading != nil {
+		hRoot := ast.Document{}
+		hRoot.Children = make([]ast.Node, len(heading.Children))
+		copy(hRoot.Children, heading.Children)
+
 		article.DisplayName = ExtractRawText(heading)
-		article.Title = template.HTML(markdown.Render(heading, renderer))
+		article.Title = template.HTML(markdown.Render(&hRoot, renderer))
 	}
 
 	article.Content = template.HTML(markdown.Render(root, renderer))
@@ -291,16 +296,21 @@ func main(){
 
 	repo := NewRepository()
 	go func(){
-		const articleRefreshLifetime = time.Second * 1;
-
 		for {
-			if (time.Since(repo.lastRefresh)) >= articleRefreshLifetime {
-				initTemplates()
-				repo.Refresh()
-				// log.Println("Refreshed repo, last refresh was: ", repo.lastRefresh.Format("2006-01-02 15:04:05"))
-			}
-			time.Sleep(time.Millisecond * 500)
+			initTemplates()
+			repo.Refresh()
+			time.Sleep(time.Millisecond * 1_000)
 		}
+	}()
+
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func(){
+	    for _ = range c {
+	    	log.Println("Shutting down...")
+	    	os.Exit(0)
+	    }
 	}()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request){

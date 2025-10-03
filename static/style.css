@@ -56,7 +56,7 @@ h2 {
 	font-size: var(--text-size-h2);
 }
 
-h2 {
+h3 {
 	font-size: var(--text-size-h3);
 }
 
@@ -69,7 +69,7 @@ h2 {
 	padding: 0.2rem;
 }
 
-.big-title h1 {
+.title-large {
 	font-weight: normal;
 	text-transform: none;
 	font-size: var(--text-size-title);
