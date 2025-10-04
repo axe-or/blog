@@ -18,8 +18,8 @@
 		<ul class="article-list">
 			{{ range .ArticleList }}
 			<li>
-				<span style="padding-right: 12pt">{{ .LastUpdated }}</span>
-				<a href="/article/{{ .Name }}"> {{ .DisplayName }}</a>
+				<span style="padding-left: 12pt"> {{ .CreatedAt }} </span>
+				<a href="/article/{{ .Name }}"> {{ .Title }}</a>
 			</li>
 			{{ end }}
 		</ul>

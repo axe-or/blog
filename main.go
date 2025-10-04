@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 	"path/filepath"
 	"strings"
@@ -12,12 +11,15 @@ import (
 	"log"
 	"net/http"
 	"html/template"
+	"encoding/json"
 	"sync"
+	"slices"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
 	"github.com/gomarkdown/markdown/html"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -26,10 +28,13 @@ const ARTICLE_ROOT = "articles"
 
 type Article struct {
     Name string
-    DisplayName string
     Title template.HTML
+    RawTitle string // Title stripped of markup
+
     Content template.HTML
+    CreatedAt time.Time
     UpdatedAt time.Time
+    // Deleted bool
 }
 
 const markdownExtensions = parser.NoIntraEmphasis | parser.Tables | parser.FencedCode |
@@ -52,12 +57,13 @@ func PopFirstHeading(doc *ast.Document) (heading *ast.Heading) {
 	return
 }
 
-func NewArticle(name string, source string, updatedAt time.Time) Article {
+func NewArticle(name string, source string, createdAt time.Time, updatedAt time.Time) Article {
 	article := Article{
 		Name: name,
-		Title: template.HTML(fmt.Sprintf("<h1>%s</h1>", string(name))),
-		DisplayName: name,
+		RawTitle: name,
+		Title: template.HTML(name),
 		UpdatedAt: updatedAt,
+		CreatedAt: createdAt,
 	}
 
 	parser := parser.NewWithExtensions(markdownExtensions)
@@ -73,8 +79,8 @@ func NewArticle(name string, source string, updatedAt time.Time) Article {
 		hRoot.Children = make([]ast.Node, len(heading.Children))
 		copy(hRoot.Children, heading.Children)
 
-		article.DisplayName = ExtractRawText(heading)
 		article.Title = template.HTML(markdown.Render(&hRoot, renderer))
+		article.RawTitle = ExtractRawText(&hRoot)
 	}
 
 	article.Content = template.HTML(markdown.Render(root, renderer))
@@ -152,20 +158,21 @@ func initTemplates(){
 }
 
 type articleTemplateData struct {
-	DisplayName string
 	Name string
 	Title template.HTML
-	LastUpdated string
+	RawTitle string
 	Content template.HTML
+	CreatedAt string
+	UpdatedAt string
 }
-
 
 func RenderArticle(w io.Writer, article Article) {
 	data := articleTemplateData{
-		DisplayName: article.DisplayName,
 		Title: article.Title,
+		RawTitle: article.RawTitle,
 		Content: article.Content,
-		LastUpdated: article.UpdatedAt.Format("2006-01-02"),
+		UpdatedAt: article.UpdatedAt.Format("2006-01-02"),
+		CreatedAt: article.CreatedAt.Format("2006-01-02"),
 	}
 
 	err := articleTempl.Execute(w, data)
@@ -189,8 +196,9 @@ func LoadArticleFromFile(path string) (article Article, err error) {
 	basename := filepath.Base(path)
 	ext := filepath.Ext(basename)
 	name := basename[:len(basename) - len(ext)]
+	modTime := info.ModTime()
 
-	article = NewArticle(name, string(data), info.ModTime())
+	article = NewArticle(name, string(data), time.Time{}, modTime)
 	return
 }
 
@@ -210,11 +218,11 @@ func RenderIndexPage(w io.Writer, title string, articles []Article){
 
 	articleData := Apply(func(a Article) articleTemplateData {
 		return articleTemplateData {
-			DisplayName: a.DisplayName,
 			Title: a.Title,
 			Name: a.Name,
 			Content: a.Content,
-			LastUpdated: a.UpdatedAt.Format("2006-01-02"),
+			UpdatedAt: a.UpdatedAt.Format("2006-01-02"),
+			CreatedAt: a.CreatedAt.Format("2006-01-02"),
 		}
 	}, articles)
 
@@ -229,18 +237,15 @@ func RenderIndexPage(w io.Writer, title string, articles []Article){
 	}
 }
 
-
 type Repository struct {
-	articles    map[string]Article
-	articleList []Article
+	Articles    map[string]Article
 	lastRefresh time.Time
 	mutex       sync.RWMutex
 }
 
 func NewRepository() *Repository {
 	repo := Repository {
-		articles: make(map[string]Article),
-		articleList: make([]Article, 0, 8),
+		Articles: make(map[string]Article),
 	}
 	return &repo
 }
@@ -249,21 +254,74 @@ func (repo *Repository) GetArticle(name string) (Article, bool) {
 	repo.mutex.RLock()
 	defer repo.mutex.RUnlock()
 
-	a, ok := repo.articles[name]
+	a, ok := repo.Articles[name]
 	return a, ok
 }
 
 func (repo *Repository) GetArticleList() []Article {
-	repo.mutex.RLock()
-	defer repo.mutex.RUnlock()
+	articles := make([]Article, len(repo.Articles))
+	i := 0
+	for _, a := range repo.Articles {
+		articles[i] = a
+		i += 1
+	}
 
-	return repo.articleList
+	slices.SortFunc(articles, func(a, b Article) int {
+		switch {
+		case a.CreatedAt.Before(b.CreatedAt): return +1
+		case b.CreatedAt.Before(a.CreatedAt): return -1
+		default: return 0
+		}
+	})
+
+	return articles
+}
+
+type PublishTimestamp struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (repo *Repository) ExportPublishingTimestamps() []byte {
+	timestamps := make(map[string]PublishTimestamp)
+
+	for name, article := range repo.Articles {
+		timestamps[name] = PublishTimestamp{
+			CreatedAt: article.CreatedAt,
+			UpdatedAt: article.UpdatedAt,
+		}
+	}
+
+	data, err := json.Marshal(timestamps)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func (repo *Repository) ImportPublishingTimestamps(data []byte){
+	timestamps := make(map[string]PublishTimestamp)
+	err := json.Unmarshal(data, &timestamps)
+	if err != nil {
+		log.Fatal("Import error for timestamps: ", err.Error())
+	}
+
+	for name, timestamp := range timestamps {
+		if article, ok := repo.Articles[name]; ok {
+			article.CreatedAt = timestamp.CreatedAt
+
+			if timestamp.UpdatedAt.After(article.UpdatedAt){
+				article.UpdatedAt = timestamp.UpdatedAt
+			}
+
+			repo.Articles[name] = article
+		}
+	}
 }
 
 func (repo *Repository) Refresh() {
 	mdFiles, _ := ListDirectoryMarkdownFiles("articles")
 	articleCache := make(map[string]Article, len(mdFiles))
-	articleList := make([]Article, 0, len(mdFiles))
 
 	for _, file := range mdFiles {
 		article, loadError := LoadArticleFromFile(file)
@@ -272,14 +330,12 @@ func (repo *Repository) Refresh() {
 			continue
 		}
 		articleCache[article.Name] = article
-		articleList = append(articleList, article)
 	}
 
 	repo.mutex.Lock()
 	defer repo.mutex.Unlock()
 
-	repo.articles = articleCache
-	repo.articleList = articleList
+	repo.Articles = articleCache
 	repo.lastRefresh = time.Now()
 }
 
@@ -299,16 +355,17 @@ func main(){
 		for {
 			initTemplates()
 			repo.Refresh()
-			time.Sleep(time.Millisecond * 1_000)
+			time.Sleep(time.Second * 5)
 		}
 	}()
-
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func(){
 	    for _ = range c {
-	    	log.Println("Shutting down...")
+	    	log.Println("Shutting down")
+	    	log.Println("Saving publish dates")
+	    	os.WriteFile("publish_dates.json", repo.ExportPublishingTimestamps(), 0o644)
 	    	os.Exit(0)
 	    }
 	}()
@@ -327,6 +384,11 @@ func main(){
 		} else {
 			http.Error(w, http.StatusText(404), 404)
 		}
+	})
+
+	router.Get("/timestamps", func(w http.ResponseWriter, r *http.Request){
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(repo.ExportPublishingTimestamps())
 	})
 
 	listenAddress := ":8080"
