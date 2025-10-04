@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="/static/favicon.png" type="image/png"/>
+	<link rel="stylesheet" href="/static/style.css" />
+	<title>{{ .PageTitle }}</title>
+</head>
+
+<body>
+	<main>
+		<h1 class="title-large"> {{ .PageTitle }} </h1>
+
+		The description
+		<h1>Articles</h1>
+
+		<ul class="article-list">
+			{{ range .ArticleList }}
+			<li>
+				<span style="padding-left: 12pt"> {{ .CreatedAt }} </span>
+				<a href="/article/{{ .Name }}"> {{ .Title }}</a>
+			</li>
+			{{ end }}
+		</ul>
+	</main>
+</body>
+</html>

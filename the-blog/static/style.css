@@ -1,0 +1,80 @@
+:root {
+	--background-main: #1d2021;
+	--background-dimmed: #222222;
+
+	--foreground-main: #fbf1c7;
+	--foreground-dimmed: #d5c4a1;
+
+	--foreground-anchor: #ffbf20;
+	--text-size-title: 26pt;
+	--text-size-h1: 22pt;
+	--text-size-h2: 18pt;
+	--text-size-h3: 16pt;
+	--text-size-default: 14pt;
+}
+
+body {
+	background: var(--background-main);
+	color: var(--foreground-main);
+	font-size: var(--text-size-default);
+	font-family: serif;
+	font-size: var(--text-size-default);
+}
+
+hr {
+	color: var(--background-dimmed);
+	border-color: var(--background-dimmed);
+}
+
+main {
+	display: block;
+	width: clamp(200px, 95%, 800px);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+a, a:visited {
+	color: var(--foreground-anchor);
+	text-decoration: none;
+}
+
+a:hover {
+	background-color: var(--foreground-anchor);
+	color: var(--background-main);
+}
+
+h1, h2, h3, h4, h5 {
+	font-weight: normal;
+	text-transform: none;
+}
+
+h1 {
+	font-size: var(--text-size-h1);
+}
+
+h2 {
+	font-size: var(--text-size-h2);
+}
+
+h3 {
+	font-size: var(--text-size-h3);
+}
+
+.text-dimmed {
+	color: var(--foreground-dimmed);
+}
+
+.article-list li {
+	list-style-type: none;
+	padding: 0.2rem;
+}
+
+.title-large {
+	font-weight: normal;
+	text-transform: none;
+	font-size: var(--text-size-title);
+}
+
+.article-update-date {
+	color: var(--foreground-main);
+}
