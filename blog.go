@@ -5,6 +5,7 @@ import (
 	"time"
 	"errors"
 	"os"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"database/sql"
@@ -17,6 +18,9 @@ import (
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
 	"github.com/gomarkdown/markdown/html"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -379,22 +383,96 @@ func InitProjectTree(baseDir string) error {
 		}
 	}
 
-
-
 	return nil
+}
 
+func PrintHelp(){
+	lines := []string {
+		"usage: blog <command> [args]",
+		"",
+		"commands:",
+		"  init            initialize a blog on current working directory",
+		"  serve <addr>    serve blog at current directory on <addr>",
+	}
+
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+}
+
+func getCLIArg(idx int) string {
+	if idx >= len(os.Args) {
+		PrintHelp()
+		os.Exit(1)
+	}
+	return os.Args[idx]
+}
+
+func Serve(address string) *chi.Router {
+	log.Println("Router setup")
+	router := chi.NewRouter()
+	router.Use(middleware.Compress(5))
+	fileServer := http.FileServer(http.Dir("./static"))
+
+	repo := NewRepository()
+
+
+	router.Get("/", func(w http.ResponseWriter, r *http.Request){
+		RenderIndexPage(w, "The Blog", repo.GetArticleList())
+	})
+
+	router.Handle("/static/*", http.StripPrefix("/static/", fileServer))
+
+	router.Get("/article/{name}", func(w http.ResponseWriter, r *http.Request){
+		name := chi.URLParam(r, "name")
+
+		if article, ok := repo.GetArticle(name); ok {
+			RenderArticle(w, article)
+		} else {
+			http.Error(w, http.StatusText(404), 404)
+		}
+	})
+
+	router.Get("/timestamps", func(w http.ResponseWriter, r *http.Request){
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(repo.ExportPublishingTimestamps())
+	})
+
+	return router
+}
+
+func spawnKeyboardInterruptHandler(){
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func(){
+	    for _ = range c {
+	    	log.Println("Shutting down")
+	    	os.Exit(0)
+	    }
+	}()
 }
 
 func main(){
-	log.Println("Init project")
-	InitProjectTree("the-blog")
+	cmd := getCLIArg(1)
+	spawnKeyboardInterruptHandler()
 
-	// log.Println("Intialize database")
-	// repo, err := NewRepository("blog.db")
-	// if err != nil {
-	// 	log.Fatal(err.Error())
-	// }
+	switch cmd {
+	case "init":
+		InitProjectTree(".")
+	
+	case "serve":
+		addr := getCLIArg(2)
 
-	// log.Println("Load articles")
-	// LoadArticlesFromDirectory("articles", repo)
+		log.Println("Intialize database")
+		repo, err := NewRepository("blog.db")
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		log.Println("Load articles")
+		LoadArticlesFromDirectory("articles", repo)
+
+	default:
+		PrintHelp()
+		os.Exit(1)
+	}
 }
